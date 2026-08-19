@@ -119,15 +119,6 @@
         endTime: end
       };
 
-      alert("送出內容：\n" + JSON.stringify({
-        request: payload.request,
-        leaveType: payload.leaveType,
-        date: payload.date,
-        startTime: payload.startTime,
-        endTime: payload.endTime,
-        idTokenLength: idToken ? idToken.length : 0
-      }, null, 2));
-
       document.getElementById('submitBtn').disabled = true;
       try {
         const res = await fetch(GAS_WEB_APP_URL, {
