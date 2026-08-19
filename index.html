@@ -33,7 +33,7 @@
   <label for="endTime">結束時間</label>
   <select id="endTime"></select>
 
-  <button id="submitBtn" disabled>驗證中，請稍候...</button>
+  <button id="submitBtn" disabled>驗證中,請稍候...</button>
   <p id="errorMsg"></p>
 
   <script>
@@ -55,7 +55,7 @@
       btn.disabled = false;
       btn.textContent = "送出";
     }).catch((err) => {
-      document.getElementById('errorMsg').textContent = "LIFF 初始化失敗，請確認是否從 LINE 開啟此頁面\n錯誤訊息：" + err;
+      document.getElementById('errorMsg').textContent = "LIFF 初始化失敗,請確認是否從 LINE 開啟此頁面\n錯誤訊息：" + err;
     });
 
     function generateTimeOptions(selectId) {
@@ -79,7 +79,7 @@
       const start = toMinutes(startStr);
       const end = toMinutes(endStr);
       if (end <= start) {
-        return { valid: false, message: `結束時間（${endStr}）必須晚於開始時間（${startStr}）\n正確範例：開始 15:00，結束 17:00` };
+        return { valid: false, message: `結束時間（${endStr}）必須晚於開始時間（${startStr}）\n正確範例：開始 15:00,結束 17:00` };
       }
       if (start < toMinutes("08:00") || end > toMinutes("17:00")) {
         return { valid: false, message: `請假時間需在正常班時段內（08:00~17:00）\n您輸入的時間：${startStr}~${endStr}` };
@@ -92,7 +92,7 @@
       errorEl.textContent = "";
 
       if (!liffReady) {
-        errorEl.textContent = "LINE 驗證尚未完成，請稍候再試";
+        errorEl.textContent = "LINE 驗證尚未完成,請稍候再試";
         return;
       }
 
@@ -106,11 +106,12 @@
 
       const idToken = liff.getIDToken();
       if (!idToken) {
-        errorEl.textContent = "尚未完成 LINE 登入驗證，請關閉頁面重新從 LINE 開啟一次";
+        errorEl.textContent = "尚未完成 LINE 登入驗證,請關閉頁面重新從 LINE 開啟一次";
         return;
       }
 
       const payload = {
+        request: 'leave',
         idToken: idToken,
         leaveType: document.getElementById('leaveType').value,
         date: document.getElementById('leaveDate').value,
@@ -134,11 +135,11 @@
         }
 
         await liff.sendMessages([
-          { type: "text", text: `已記錄請假，並回報請假\n假別：${payload.leaveType}\n日期：${payload.date}\n時間：${start}~${end}（共 ${result.hours} 小時）` }
+          { type: "text", text: `已記錄請假,並回報請假\n假別：${payload.leaveType}\n日期：${payload.date}\n時間：${start}~${end}（共 ${result.hours} 小時）` }
         ]);
         liff.closeWindow();
       } catch (err) {
-        errorEl.textContent = "送出失敗，請稍後再試或聯繫人資";
+        errorEl.textContent = "送出失敗,請稍後再試或聯繫人資";
         document.getElementById('submitBtn').disabled = false;
       }
     }
