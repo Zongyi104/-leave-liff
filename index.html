@@ -1,150 +1,252 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <base target="_top">
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <style>
-    body { font-family: sans-serif; padding: 16px; max-width: 480px; margin: 0 auto; }
-    label { display: block; margin-top: 12px; font-size: 14px; color: #555; }
-    input, select, button { width: 100%; padding: 10px; margin-top: 4px; font-size: 15px; box-sizing: border-box; }
-    button { margin-top: 20px; background: #1F4E78; color: #fff; border: none; border-radius: 6px; }
-    button:disabled { background: #999; }
-    #errorMsg { color: #D32F2F; font-size: 13px; margin-top: 8px; white-space: pre-line; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>請假申請</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root { --main:#1F4E78; --bg:#F3F5F8; --line:#D5DAE1; --err:#C62828; --muted:#667085; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; background:var(--bg); color:#1d1d1f; }
+  .wrap { max-width:480px; margin:0 auto; padding:20px 16px 40px; }
+  .hidden { display:none !important; }
+  h2 { margin:0 0 4px; font-size:21px; color:var(--main); }
+  .hint { margin:0 0 16px; color:var(--muted); font-size:14px; line-height:1.5; }
+  .card { background:#fff; border-radius:14px; padding:16px; margin-bottom:14px; }
+  .label { font-size:13px; color:var(--muted); margin:0 0 8px; }
+  .card .label:not(:first-child) { margin-top:14px; }
+  input, select { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:#fff; color:inherit; }
+  .chips { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .chip { padding:12px 6px; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:15px; color:inherit; }
+  .chip.on { background:var(--main); border-color:var(--main); color:#fff; }
+  .row { display:grid; grid-template-columns:auto 1fr auto 1fr; gap:8px; align-items:center; margin-top:12px; font-size:14px; color:var(--muted); }
+  .balance { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .balance div { background:#fff; border-radius:12px; padding:12px; text-align:center; font-size:13px; color:var(--muted); }
+  .balance b { display:block; font-size:22px; color:var(--main); margin:2px 0; }
+  .result { margin-top:14px; padding:12px; border-radius:10px; background:#EEF3F8; text-align:center; }
+  .result .h { font-size:15px; color:var(--muted); }
+  .result .h b { font-size:26px; color:var(--main); }
+  .result .d { font-size:13px; color:var(--muted); margin-top:4px; line-height:1.5; }
+  .btn { width:100%; padding:15px; font-size:17px; border:none; border-radius:12px; background:var(--main); color:#fff; }
+  .btn:disabled { opacity:.5; }
+  .err { color:var(--err); font-size:14px; white-space:pre-line; min-height:1.2em; margin:10px 0 0; }
+  .center { text-align:center; padding-top:70px; color:var(--muted); white-space:pre-line; }
+  .big { font-size:60px; margin-bottom:8px; }
+</style>
 </head>
 <body>
-  <h3>請假申請</h3>
+<div class="wrap">
 
-  <label for="leaveDate">日期</label>
-  <input type="date" id="leaveDate">
+  <div id="loading" class="center">載入中…</div>
 
-  <label for="leaveType">假別</label>
-  <select id="leaveType">
-    <option value="病假">病假</option>
-    <option value="事假">事假</option>
-    <option value="特休">特休</option>
-    <option value="加班補休">加班補休</option>
-  </select>
+  <!-- 第一次使用：綁定 -->
+  <div id="bind" class="hidden">
+    <h2>第一次使用｜綁定身分</h2>
+    <p class="hint">輸入人資建檔的姓名與員工編號，只需做一次。</p>
+    <div class="card">
+      <p class="label">姓名</p>
+      <input id="bName" placeholder="例如：王小明" autocomplete="name">
+      <p class="label">員工編號</p>
+      <input id="bEmpId" placeholder="例如：A112060501" autocapitalize="characters">
+    </div>
+    <button class="btn" id="bindBtn">確認綁定</button>
+    <p class="err" id="bindErr"></p>
+  </div>
 
-  <label for="startTime">開始時間</label>
-  <select id="startTime"></select>
+  <!-- 請假表單 -->
+  <div id="form" class="hidden">
+    <h2 id="hello">請假申請</h2>
+    <p class="hint">可用時數（已扣除審核中的申請）</p>
+    <div class="balance" id="balance"></div>
 
-  <label for="endTime">結束時間</label>
-  <select id="endTime"></select>
+    <div class="card">
+      <p class="label">假別</p>
+      <div class="chips" id="types"></div>
+    </div>
 
-  <button id="submitBtn" disabled>驗證中,請稍候...</button>
-  <p id="errorMsg"></p>
+    <div class="card">
+      <p class="label">日期</p>
+      <input type="date" id="date">
+      <p class="label">當天狀況</p>
+      <div class="chips" id="modes"></div>
+      <div class="row hidden" id="workRow">
+        <span>上班</span><select id="ws"></select>
+        <span>下班</span><select id="we"></select>
+      </div>
+      <div class="result">
+        <div class="h">請假 <b id="hours">0</b> 小時</div>
+        <div class="d" id="detail">請選擇當天狀況</div>
+      </div>
+    </div>
 
-  <script>
-    const LIFF_ID = "2011158711-asycIWGC";
-    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzy3xDQJCHVBRklyCtHT5I2NBPmYEi87vXMbsYJJRdE_lb64YZe0Nsiz7x5hOsrxD3vhQ/exec";
-    let liffReady = false;
+    <button class="btn" id="submitBtn">送出申請</button>
+    <p class="err" id="formErr"></p>
+  </div>
 
-    document.getElementById('leaveDate').valueAsDate = new Date();
-    generateTimeOptions('startTime');
-    generateTimeOptions('endTime');
+  <!-- 送出完成 -->
+  <div id="done" class="hidden center">
+    <div class="big">✅</div>
+    <h2>已送出，等待主管審核</h2>
+    <p class="hint" id="doneText"></p>
+    <button class="btn" id="closeBtn">關閉</button>
+  </div>
 
-    liff.init({ liffId: LIFF_ID }).then(() => {
-      if (!liff.isLoggedIn()) {
-        liff.login();
-        return;
-      }
-      liffReady = true;
-      const btn = document.getElementById('submitBtn');
-      btn.disabled = false;
-      btn.textContent = "送出";
-    }).catch((err) => {
-      document.getElementById('errorMsg').textContent = "LIFF 初始化失敗,請確認是否從 LINE 開啟此頁面\n錯誤訊息：" + err;
-    });
+</div>
 
-    function generateTimeOptions(selectId) {
-      const select = document.getElementById(selectId);
-      for (let h = 0; h < 24; h++) {
-        for (const m of [0, 30]) {
-          const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-          const opt = document.createElement('option');
-          opt.value = time;
-          opt.text = time;
-          select.appendChild(opt);
-        }
-      }
-    }
+<script>
+// ===== 只需要改這兩行 =====
+const LIFF_ID = '2011158711-asycIWGC';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzy3xDQJCHVBRklyCtHT5I2NBPmYEi87vXMbsYJJRdE_lb64YZe0Nsiz7x5hOsrxD3vhQ/exec';
+// ==========================
 
-    function validateTimeRange(startStr, endStr) {
-      const toMinutes = (t) => {
-        const [h, m] = t.split(':').map(Number);
-        return h * 60 + m;
-      };
-      const start = toMinutes(startStr);
-      const end = toMinutes(endStr);
-      if (end <= start) {
-        return { valid: false, message: `結束時間（${endStr}）必須晚於開始時間（${startStr}）\n正確範例：開始 15:00,結束 17:00` };
-      }
-      if (start < toMinutes("08:00") || end > toMinutes("17:00")) {
-        return { valid: false, message: `請假時間需在正常班時段內（08:00~17:00）\n您輸入的時間：${startStr}~${endStr}` };
-      }
-      return { valid: true };
-    }
+const $ = id => document.getElementById(id);
+const S = { type: '', mode: '', cfg: null };
 
-    async function submitLeaveRequest() {
-      const errorEl = document.getElementById('errorMsg');
-      errorEl.textContent = "";
+const show = id => ['loading', 'bind', 'form', 'done'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+const fail = msg => { show('loading'); $('loading').textContent = msg; };
+const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const toTime = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const fmtH = m => (m % 60 ? (m / 60).toFixed(1) : m / 60);
 
-      if (!liffReady) {
-        errorEl.textContent = "LINE 驗證尚未完成,請稍候再試";
-        return;
-      }
+async function api(action, data) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action, idToken: liff.getIDToken() }, data || {})),
+  });
+  return res.json();
+}
 
-      const start = document.getElementById('startTime').value;
-      const end = document.getElementById('endTime').value;
-      const check = validateTimeRange(start, end);
-      if (!check.valid) {
-        errorEl.textContent = check.message;
-        return;
-      }
+// 與後端相同的計算（後端為準，這裡只是即時顯示）
+function rest(span) {
+  const c = S.cfg;
+  if (span >= c.restFullFrom * 60) return 60;
+  if (span > c.restHalfOver * 60) return 30;
+  return 0;
+}
+function plan() {
+  const c = S.cfg;
+  const daySpan = toMin(c.workEnd) - toMin(c.workStart);
+  const dayWork = daySpan - rest(daySpan);
+  if (S.mode === 'full') return { hours: dayWork / 60, detail: `全天 ${c.workStart}~${c.workEnd}` };
+  if (!S.mode) return null;
+  const ws = $('ws').value, we = $('we').value;
+  const span = toMin(we) - toMin(ws);
+  if (span <= 0) return { hours: 0, detail: '下班時間要晚於上班時間' };
+  const r = rest(span);
+  const hours = Math.round((dayWork - (span - r)) / 6) / 10;
+  if (hours <= 0) return { hours: 0, detail: '這個上下班時間不需要請假' };
+  const segs = [];
+  if (ws > c.workStart) segs.push(`${c.workStart}~${ws}`);
+  if (we < c.workEnd) segs.push(`${we}~${c.workEnd}`);
+  return {
+    hours,
+    detail: `請假時段 ${segs.join('、')}\n（上班 ${fmtH(span)} 小時${r ? `，扣休息 ${r} 分鐘` : ''}，實際工作 ${fmtH(span - r)} 小時）`,
+  };
+}
+function refresh() {
+  const p = plan();
+  $('hours').textContent = p ? p.hours : 0;
+  $('detail').textContent = p ? p.detail : '請選擇當天狀況';
+}
 
-      const idToken = liff.getIDToken();
-      if (!idToken) {
-        errorEl.textContent = "尚未完成 LINE 登入驗證,請關閉頁面重新從 LINE 開啟一次";
-        return;
-      }
+function showForm(s) {
+  S.cfg = s;
+  $('hello').textContent = `${s.name}，你好`;
+  $('balance').innerHTML = Object.entries(s.balance).map(([k, v]) => `<div>${k}<b>${v}</b>小時</div>`).join('');
 
-      const payload = {
-        request: 'leave',
-        idToken: idToken,
-        leaveType: document.getElementById('leaveType').value,
-        date: document.getElementById('leaveDate').value,
-        startTime: start,
-        endTime: end
-      };
+  $('types').innerHTML = s.types.map(t => `<button class="chip" data-t="${t}">${t}</button>`).join('');
+  $('types').onclick = e => {
+    const t = e.target.dataset.t;
+    if (!t) return;
+    S.type = t;
+    [...$('types').children].forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  };
 
-      document.getElementById('submitBtn').disabled = true;
-      try {
-        const res = await fetch(GAS_WEB_APP_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payload)
-        });
-        const result = await res.json();
+  const opts = (from, to) => { let h = ''; for (let m = from; m <= to; m += 30) h += `<option>${toTime(m)}</option>`; return h; };
+  $('ws').innerHTML = opts(toMin(s.workStart), toMin(s.workEnd) - 30);
+  $('we').innerHTML = opts(toMin(s.workStart) + 30, toMin(s.workEnd));
 
-        if (!result.success) {
-          errorEl.textContent = result.message;
-          document.getElementById('submitBtn').disabled = false;
-          return;
-        }
+  // 當天狀況：全天請假／上午請假（下午才上班）／下午請假（上午上班）／自訂上下班
+  const modes = [
+    ['full', '全天請假'],
+    ['part', '上午請假', s.lunchEnd, s.workEnd],
+    ['part', '下午請假', s.workStart, s.lunchStart],
+    ['part', '自訂上下班', s.workStart, s.workEnd],
+  ];
+  $('modes').innerHTML = modes.map(([m, n, a, b], i) => `<button class="chip" data-i="${i}">${n}</button>`).join('');
+  $('modes').onclick = e => {
+    const i = e.target.dataset.i;
+    if (i === undefined) return;
+    const [m, , a, b] = modes[i];
+    S.mode = m;
+    if (a) { $('ws').value = a; $('we').value = b; }
+    $('workRow').classList.toggle('hidden', m === 'full');
+    [...$('modes').children].forEach(x => x.classList.toggle('on', x === e.target));
+    refresh();
+  };
+  $('ws').onchange = $('we').onchange = refresh;
 
-        await liff.sendMessages([
-          { type: "text", text: `已記錄請假,並回報請假\n假別：${payload.leaveType}\n日期：${payload.date}\n時間：${start}~${end}（共 ${result.hours} 小時）` }
-        ]);
-        liff.closeWindow();
-      } catch (err) {
-        errorEl.textContent = "送出失敗,請稍後再試或聯繫人資";
-        document.getElementById('submitBtn').disabled = false;
-      }
-    }
+  const now = new Date();
+  $('date').value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  refresh();
+  show('form');
+}
 
-    document.getElementById('submitBtn').addEventListener('click', submitLeaveRequest);
-  </script>
+$('bindBtn').onclick = async () => {
+  const name = $('bName').value.trim(), empId = $('bEmpId').value.trim();
+  if (!name || !empId) { $('bindErr').textContent = '請輸入姓名與員工編號'; return; }
+  $('bindBtn').disabled = true; $('bindErr').textContent = '';
+  try {
+    const r = await api('bind', { name, empId });
+    if (!r.ok) { $('bindErr').textContent = r.message; return; }
+    showForm(r);
+  } catch (e) {
+    $('bindErr').textContent = '連線失敗，請稍後再試';
+  } finally {
+    $('bindBtn').disabled = false;
+  }
+};
+
+$('submitBtn').onclick = async () => {
+  const err = $('formErr');
+  err.textContent = '';
+  if (!S.type) { err.textContent = '請選擇假別'; return; }
+  if (!$('date').value) { err.textContent = '請選擇日期'; return; }
+  const p = plan();
+  if (!p || p.hours <= 0) { err.textContent = p ? p.detail : '請選擇當天狀況'; return; }
+
+  const d = { type: S.type, date: $('date').value, full: S.mode === 'full', workStart: $('ws').value, workEnd: $('we').value };
+  const btn = $('submitBtn');
+  btn.disabled = true; btn.textContent = '送出中…';
+  try {
+    const r = await api('leave', d);
+    if (!r.ok) { err.textContent = r.message; return; }
+    const text = `${d.type}｜${d.date.replace(/-/g, '/')}｜${r.detail}（${r.hours} 小時）`;
+    $('doneText').textContent = text;
+    show('done');
+    if (liff.isInClient()) liff.sendMessages([{ type: 'text', text: '📝 已送出請假\n' + text }]).catch(() => {});
+  } catch (e) {
+    err.textContent = '連線失敗，請稍後再試';
+  } finally {
+    btn.disabled = false; btn.textContent = '送出申請';
+  }
+};
+
+$('closeBtn').onclick = () => (liff.isInClient() ? liff.closeWindow() : window.close());
+
+(async () => {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    const s = await api('status');
+    if (!s.ok) { fail(s.message); return; }
+    s.bound ? showForm(s) : show('bind');
+  } catch (e) {
+    fail('無法載入，請從 LINE 選單開啟此頁面\n（' + e + '）');
+  }
+})();
+</script>
 </body>
 </html>
