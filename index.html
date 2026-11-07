@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>請假申請</title>
+<title>出勤小幫手</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
   :root { --main:#1F4E78; --bg:#F3F5F8; --line:#D5DAE1; --err:#C62828; --muted:#667085; }
@@ -33,6 +33,15 @@
   .err { color:var(--err); font-size:14px; white-space:pre-line; min-height:1.2em; margin:10px 0 0; }
   .center { text-align:center; padding-top:70px; color:var(--muted); white-space:pre-line; }
   .big { font-size:60px; margin-bottom:8px; }
+  /* 排休月曆 */
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+  .cal .wk { text-align:center; font-size:12px; color:var(--muted); }
+  .cal button { aspect-ratio:1; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:15px; color:inherit; padding:0; line-height:1.1; }
+  .cal button.red { color:#D32F2F; font-weight:600; }
+  .cal button.on { background:var(--main); border-color:var(--main); color:#fff; }
+  .cal button:disabled { background:#EEF0F3; color:#98A2B3; }
+  .cal button small { display:block; font-size:10px; }
+  .legend { font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6; }
 </style>
 </head>
 <body>
@@ -84,10 +93,26 @@
     <p class="err" id="formErr"></p>
   </div>
 
-  <!-- 送出完成 -->
+  <!-- 自行排休 -->
+  <div id="rest" class="hidden">
+    <h2 id="restTitle">排休</h2>
+    <p class="hint" id="restHint"></p>
+    <div class="card">
+      <div class="cal" id="cal"></div>
+      <p class="legend">紅字＝國定紅字日（週末與國定假日）<br>灰色＝已有請假，不能排休</p>
+    </div>
+    <div class="result" style="margin-bottom:14px">
+      <div class="h">已選 <b id="restCount">0</b> / <span id="restNeed">0</span> 天</div>
+      <div class="d" id="restCheck"></div>
+    </div>
+    <button class="btn" id="restBtn">儲存排休</button>
+    <p class="err" id="restErr"></p>
+  </div>
+
+  <!-- 完成 -->
   <div id="done" class="hidden center">
     <div class="big">✅</div>
-    <h2>已送出，等待主管審核</h2>
+    <h2 id="doneTitle">已送出，等待主管審核</h2>
     <p class="hint" id="doneText"></p>
     <button class="btn" id="closeBtn">關閉</button>
   </div>
@@ -101,9 +126,18 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzy3xDQJCHVBRklyCtHT5I2
 // ==========================
 
 const $ = id => document.getElementById(id);
-const S = { type: '', mode: '', cfg: null };
+const S = { type: '', mode: '', cfg: null, rest: null, picked: [] };
 
-const show = id => ['loading', 'bind', 'form', 'done'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+const show = id => ['loading', 'bind', 'form', 'rest', 'done'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+
+// 網址帶 ?page=rest 時開排休頁面（LIFF 會把 liff.line.me/…?page=rest 的參數轉過來）
+function pageParam() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('page')) return q.get('page');
+  const st = q.get('liff.state');
+  return st ? new URLSearchParams(st.replace(/^[^?]*\?/, '')).get('page') : '';
+}
+const PAGE = pageParam();
 const fail = msg => { show('loading'); $('loading').textContent = msg; };
 const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const toTime = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
@@ -201,7 +235,7 @@ $('bindBtn').onclick = async () => {
   try {
     const r = await api('bind', { name, empId });
     if (!r.ok) { $('bindErr').textContent = r.message; return; }
-    showForm(r);
+    PAGE === 'rest' ? loadRest() : showForm(r);
   } catch (e) {
     $('bindErr').textContent = '連線失敗，請稍後再試';
   } finally {
@@ -224,6 +258,7 @@ $('submitBtn').onclick = async () => {
     const r = await api('leave', d);
     if (!r.ok) { err.textContent = r.message; return; }
     const text = `${d.type}｜${d.date.replace(/-/g, '/')}｜${r.detail}（${r.hours} 小時）`;
+    $('doneTitle').textContent = '已送出，等待主管審核';
     $('doneText').textContent = text;
     show('done');
     if (liff.isInClient()) liff.sendMessages([{ type: 'text', text: '📝 已送出請假\n' + text }]).catch(() => {});
@@ -231,6 +266,75 @@ $('submitBtn').onclick = async () => {
     err.textContent = '連線失敗，請稍後再試';
   } finally {
     btn.disabled = false; btn.textContent = '送出申請';
+  }
+};
+
+// ===== 自行排休 =====
+async function loadRest() {
+  show('loading');
+  $('loading').textContent = '載入排休資料中…';
+  const r = await api('restStatus');
+  if (!r.ok) { fail(r.message); return; }
+  S.rest = r;
+  S.picked = r.picked.slice();
+  const m = Number(r.ym.slice(5, 7));
+  $('restTitle').textContent = `${r.name}｜${m} 月排休`;
+  $('restHint').textContent = r.canEdit
+    ? `點日期選休假，要排 ${r.required} 天；1~14 日、15~28 日各至少 2 天。${r.deadline} 前可以修改。`
+    : `已超過 ${r.deadline} 截止，只能查看。如需調整請找人資。`;
+  $('restNeed').textContent = r.required;
+  $('restBtn').classList.toggle('hidden', !r.canEdit);
+  drawCal();
+  show('rest');
+}
+
+function restError(p, need) {
+  if (p.length !== need) return `要排 ${need} 天，目前選了 ${p.length} 天`;
+  if (p.filter(d => d <= 14).length < 2) return '1~14 日至少要排 2 天';
+  if (p.filter(d => d >= 15 && d <= 28).length < 2) return '15~28 日至少要排 2 天';
+  return '';
+}
+
+function drawCal() {
+  const r = S.rest;
+  let h = '日一二三四五六'.split('').map(w => `<div class="wk">${w}</div>`).join('');
+  for (let i = 0; i < r.firstDow; i++) h += '<div></div>';
+  for (let d = 1; d <= r.days; d++) {
+    const lock = r.locked[d];
+    const cls = [r.red.includes(d) ? 'red' : '', S.picked.includes(d) ? 'on' : ''].join(' ');
+    h += `<button class="${cls}" data-d="${d}" ${lock || !r.canEdit ? 'disabled' : ''}>${d}${lock ? `<small>${lock}</small>` : ''}</button>`;
+  }
+  $('cal').innerHTML = h;
+  const first = S.picked.filter(d => d <= 14).length, second = S.picked.filter(d => d >= 15 && d <= 28).length;
+  $('restCount').textContent = S.picked.length;
+  $('restCheck').textContent =
+    `1~14 日：${first} 天 ${first >= 2 ? '✅' : '❌'}｜15~28 日：${second} 天 ${second >= 2 ? '✅' : '❌'}｜總數 ${S.picked.length === r.required ? '✅' : '❌'}`;
+}
+
+$('cal').onclick = e => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  const d = Number(b.dataset.d);
+  S.picked = S.picked.includes(d) ? S.picked.filter(x => x !== d) : S.picked.concat(d).sort((a, b) => a - b);
+  $('restErr').textContent = '';
+  drawCal();
+};
+
+$('restBtn').onclick = async () => {
+  const err = restError(S.picked, S.rest.required);
+  if (err) { $('restErr').textContent = err; return; }
+  const btn = $('restBtn');
+  btn.disabled = true; btn.textContent = '儲存中…';
+  try {
+    const r = await api('saveRest', { ym: S.rest.ym, days: S.picked });
+    if (!r.ok) { $('restErr').textContent = r.message; return; }
+    $('doneTitle').textContent = '排休已儲存';
+    $('doneText').textContent = r.message;
+    show('done');
+  } catch (e) {
+    $('restErr').textContent = '連線失敗，請稍後再試';
+  } finally {
+    btn.disabled = false; btn.textContent = '儲存排休';
   }
 };
 
@@ -242,7 +346,8 @@ $('closeBtn').onclick = () => (liff.isInClient() ? liff.closeWindow() : window.c
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
     const s = await api('status');
     if (!s.ok) { fail(s.message); return; }
-    s.bound ? showForm(s) : show('bind');
+    if (!s.bound) { show('bind'); return; }
+    PAGE === 'rest' ? loadRest() : showForm(s);
   } catch (e) {
     fail('無法載入，請從 LINE 選單開啟此頁面\n（' + e + '）');
   }
