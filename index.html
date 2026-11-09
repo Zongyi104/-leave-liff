@@ -42,6 +42,12 @@
   .cal button:disabled { background:#EEF0F3; color:#98A2B3; }
   .cal button small { display:block; font-size:10px; }
   .legend { font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  /* 請假／加班切換 */
+  .tabs { display:grid; grid-template-columns:1fr 1fr; background:#E4E8EE; border-radius:12px; padding:4px; margin-bottom:14px; }
+  .tabs button { border:none; background:transparent; padding:10px; font-size:16px; border-radius:9px; color:var(--muted); }
+  .tabs button.on { background:#fff; color:var(--main); font-weight:600; }
+  .chips.ot .chip { font-size:14px; }
+  .result.ot .h b { color:#E65100; }
 </style>
 </head>
 <body>
@@ -63,12 +69,18 @@
     <p class="err" id="bindErr"></p>
   </div>
 
-  <!-- 請假表單 -->
+  <!-- 請假／加班表單 -->
   <div id="form" class="hidden">
     <h2 id="hello">請假申請</h2>
     <p class="hint">可用時數（已扣除審核中的申請）</p>
     <div class="balance" id="balance"></div>
 
+    <div class="tabs" id="tabs">
+      <button data-tab="leavePane" class="on">請假</button>
+      <button data-tab="otPane">加班</button>
+    </div>
+
+    <div id="leavePane">
     <div class="card">
       <p class="label">假別</p>
       <div class="chips" id="types"></div>
@@ -91,6 +103,26 @@
 
     <button class="btn" id="submitBtn">送出申請</button>
     <p class="err" id="formErr"></p>
+    </div>
+
+    <div id="otPane" class="hidden">
+      <div class="card">
+        <p class="label">加班日期（當天或事後 <span id="otDays">2</span> 天內）</p>
+        <input type="date" id="otDate">
+        <p class="label">常用時段</p>
+        <div class="chips ot" id="otPresets"></div>
+        <div class="row">
+          <span>開始</span><select id="os"></select>
+          <span>結束</span><select id="oe"></select>
+        </div>
+        <div class="result ot">
+          <div class="h">加班 <b id="otHours">0</b> 小時</div>
+          <div class="d" id="otDetail">核准後轉為加班補休</div>
+        </div>
+      </div>
+      <button class="btn" id="otBtn">送出加班申請</button>
+      <p class="err" id="otErr"></p>
+    </div>
   </div>
 
   <!-- 自行排休 -->
@@ -225,8 +257,95 @@ function showForm(s) {
   const now = new Date();
   $('date').value = new Date(now - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   refresh();
+  setupOt(s);
+  switchTab(PAGE === 'ot' ? 'otPane' : 'leavePane');
   show('form');
 }
+
+// ===== 請假／加班切換 =====
+function switchTab(id) {
+  ['leavePane', 'otPane'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+  [...$('tabs').children].forEach(b => b.classList.toggle('on', b.dataset.tab === id));
+}
+$('tabs').onclick = e => { if (e.target.dataset.tab) switchTab(e.target.dataset.tab); };
+
+// ===== 加班 =====
+function setupOt(s) {
+  const opts = (from, to) => { let h = ''; for (let m = from; m <= to; m += 30) h += `<option>${toTime(m)}</option>`; return h; };
+  $('os').innerHTML = opts(toMin(s.otEarliest), toMin(s.otLatest) - 30);
+  $('oe').innerHTML = opts(toMin(s.otEarliest) + 30, toMin(s.otLatest));
+  $('os').value = s.workEnd;
+  $('oe').value = toTime(toMin(s.workEnd) + 60);
+
+  // 日期只能選今天與前 N 天
+  const t = new Date(s.today + 'T00:00:00');
+  const min = new Date(t); min.setDate(t.getDate() - s.otBackDays);
+  const iso = d => new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  $('otDays').textContent = s.otBackDays;
+  $('otDate').min = iso(min);
+  $('otDate').max = s.today;
+  $('otDate').value = s.today;
+
+  const end = toMin(s.workEnd);
+  const presets = [
+    [`下班後 1 小時`, s.workEnd, toTime(end + 60)],
+    [`下班後 2 小時`, s.workEnd, toTime(end + 120)],
+    [`下班後 4 小時`, s.workEnd, toTime(end + 240)],
+    [`休息日整天`, s.workStart, s.workEnd],
+  ];
+  $('otPresets').innerHTML = presets.map(([n, a, b]) => `<button class="chip" data-a="${a}" data-b="${b}">${n}</button>`).join('');
+  $('otPresets').onclick = e => {
+    const d = e.target.dataset;
+    if (!d.a) return;
+    $('os').value = d.a; $('oe').value = d.b;
+    [...$('otPresets').children].forEach(b => b.classList.toggle('on', b === e.target));
+    refreshOt();
+  };
+  $('os').onchange = $('oe').onchange = () => {
+    [...$('otPresets').children].forEach(b => b.classList.remove('on'));
+    refreshOt();
+  };
+  refreshOt();
+}
+
+function planOt() {
+  const span = toMin($('oe').value) - toMin($('os').value);
+  if (span <= 0) return { hours: 0, detail: '結束時間要晚於開始時間' };
+  const r = rest(span);
+  return {
+    hours: Math.round((span - r) / 6) / 10,
+    detail: `${$('os').value}~${$('oe').value}（${fmtH(span)} 小時${r ? `，扣休息 ${r} 分鐘` : ''}）\n核准後轉為加班補休`,
+  };
+}
+function refreshOt() {
+  const p = planOt();
+  $('otHours').textContent = p.hours;
+  $('otDetail').textContent = p.detail;
+}
+
+$('otBtn').onclick = async () => {
+  const err = $('otErr');
+  err.textContent = '';
+  if (!$('otDate').value) { err.textContent = '請選擇日期'; return; }
+  const p = planOt();
+  if (p.hours <= 0) { err.textContent = p.detail; return; }
+  const d = { date: $('otDate').value, start: $('os').value, end: $('oe').value };
+  const btn = $('otBtn');
+  btn.disabled = true; btn.textContent = '送出中…';
+  try {
+    const r = await api('overtime', d);
+    if (!r.ok) { err.textContent = r.message; return; }
+    const text = `加班｜${d.date.replace(/-/g, '/')}｜${d.start}~${d.end}（${r.hours} 小時，${r.kind}）`;
+    $('doneTitle').textContent = '加班已送出，等待主管審核';
+    $('doneText').textContent = text;
+    show('done');
+    if (liff.isInClient()) liff.sendMessages([{ type: 'text', text: '📝 已送出加班\n' + text }]).catch(() => {});
+  } catch (e) {
+    err.textContent = '連線失敗，請稍後再試';
+  } finally {
+    btn.disabled = false; btn.textContent = '送出加班申請';
+  }
+};
 
 $('bindBtn').onclick = async () => {
   const name = $('bName').value.trim(), empId = $('bEmpId').value.trim();
